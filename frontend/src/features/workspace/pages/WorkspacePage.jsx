@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Activity, ArrowUpRight, Braces, Check, Clock3, FolderKanban, LogOut, Play, Save, UserRound } from "lucide-react";
+import { Activity, ArrowUpRight, Braces, Check, Clock3, Database, FolderKanban, LogOut, Play, Save, UserRound } from "lucide-react";
 import { clearSession, getSession, updateSessionProfile } from "../../auth/api/authApi.js";
 import Brand from "../../../shared/components/Brand.jsx";
 import ProfilePanel from "../components/ProfilePanel.jsx";
@@ -29,7 +29,7 @@ function KeyValueEditor({ title, rows, onChange }) {
   return <div className="kv-editor"><div className="kv-title">{title}</div><div className="kv-header"><span /><span>Key</span><span>Value</span><span>Description</span></div>{rows.map((row, index) => <div className="kv-row" key={index}><input aria-label="Enable row" type="checkbox" checked={row.enabled} onChange={(event) => updateRow(index, "enabled", event.target.checked)} /><input aria-label={`${title} key ${index + 1}`} placeholder="Key" value={row.key} onChange={(event) => updateRow(index, "key", event.target.value)} /><input aria-label={`${title} value ${index + 1}`} placeholder="Value" value={row.value} onChange={(event) => updateRow(index, "value", event.target.value)} /><input aria-label={`${title} description ${index + 1}`} placeholder="Description" value={row.description} onChange={(event) => updateRow(index, "description", event.target.value)} /></div>)}</div>;
 }
 
-function CollectionsPage({ accessToken }) {
+function CollectionsPage({ accessToken, databaseStorageEnabled, onToggleDatabaseStorage }) {
   const [method, setMethod] = useState("GET");
   const [url, setUrl] = useState("https://jsonplaceholder.typicode.com/todos/1");
   const [description, setDescription] = useState("");
@@ -120,7 +120,7 @@ function CollectionsPage({ accessToken }) {
         contentType: contentType || "Not provided",
       });
       const safeHeaders = Object.fromEntries(Object.entries(headers).filter(([key]) => !/(authorization|cookie|token|secret|password|api[-_]?key)/i.test(key)));
-      recordHistory(accessToken, {
+      if (databaseStorageEnabled) recordHistory(accessToken, {
         method, url: requestUrl.toString(), request_headers: safeHeaders,
         request_body: typeof requestBody === "string" ? requestBody : "",
         response_status: result.status, response_headers: Object.fromEntries(result.headers.entries()),
@@ -130,13 +130,17 @@ function CollectionsPage({ accessToken }) {
     } catch (requestError) {
       const duration = Math.round(performance.now() - startedAt);
       setResponse({ error: requestError.message, duration });
-      recordHistory(accessToken, { method, url, request_headers: {}, request_body: typeof body === "string" ? body : "", response_body: requestError.message, duration_ms: duration }).catch(() => {});
+      if (databaseStorageEnabled) recordHistory(accessToken, { method, url, request_headers: {}, request_body: typeof body === "string" ? body : "", response_body: requestError.message, duration_ms: duration }).catch(() => {});
     } finally {
       setIsSending(false);
     }
   }
 
   async function handleSaveRequest() {
+    if (!databaseStorageEnabled) {
+      setSaveMessage("Turn on database storage to save this request.");
+      return;
+    }
     setIsSaving(true);
     setSaveMessage("");
     try {
@@ -182,7 +186,9 @@ function CollectionsPage({ accessToken }) {
           <h1>Send a request</h1>
           <p>Enter an endpoint, choose a method, and inspect the response below.</p>
         </div>
-        <span className="collection-status"><Check size={14} /> Ready</span>
+        <button className={`database-storage-toggle ${databaseStorageEnabled ? "enabled" : ""}`} type="button" onClick={onToggleDatabaseStorage} aria-pressed={databaseStorageEnabled}>
+          <Database size={15} /> Database storage <strong>{databaseStorageEnabled ? "On" : "Off"}</strong>
+        </button>
       </div>
 
       <section className="request-composer" aria-label="API request composer">
@@ -214,7 +220,7 @@ function CollectionsPage({ accessToken }) {
           </div>
           <div className="request-options">
             <div className="collection-picker"><label htmlFor="request-collection">Collection</label><select id="request-collection" value={selectedCollectionId} onChange={(event) => setSelectedCollectionId(event.target.value)} disabled={isLoadingCollections}><option value="">Create new collection on save</option>{collections.map((collection) => <option key={collection.id} value={collection.id}>{collection.name}</option>)}</select></div>
-            <button className="save-request-button" type="button" onClick={handleSaveRequest} disabled={isSaving || !url.trim()}><Save size={14} /> {isSaving ? "Saving..." : "Save request"}</button>
+            <button className="save-request-button" type="button" onClick={handleSaveRequest} disabled={isSaving || !url.trim() || !databaseStorageEnabled}><Save size={14} /> {isSaving ? "Saving..." : databaseStorageEnabled ? "Save request" : "Storage is off"}</button>
             {saveMessage && <span className="save-message">{saveMessage}</span>}
           </div>
           <p className="request-helper">Scripts and settings are saved with the request. Body fields use JSON objects for form-data and URL encoded modes.</p>
@@ -248,6 +254,7 @@ export default function WorkspacePage() {
   const session = getSession();
   const [isProfileOpen, setIsProfileOpen] = useState(false);
   const [activeSection, setActiveSection] = useState("Overview");
+  const [databaseStorageEnabled, setDatabaseStorageEnabled] = useState(() => window.localStorage.getItem("apiforge.databaseStorage") === "enabled");
   const [profileName, setProfileName] = useState(session?.username || "developer");
   const username = session?.username || "developer";
 
@@ -259,6 +266,14 @@ export default function WorkspacePage() {
   function handleSignOut() {
     clearSession();
     navigate("/login", { replace: true });
+  }
+
+  function toggleDatabaseStorage() {
+    setDatabaseStorageEnabled((enabled) => {
+      const next = !enabled;
+      window.localStorage.setItem("apiforge.databaseStorage", next ? "enabled" : "disabled");
+      return next;
+    });
   }
 
   return (
@@ -302,7 +317,7 @@ export default function WorkspacePage() {
           <div className="topbar-state"><span className="live-dot" /> API session active</div>
         </header>
         <div className="workspace-content" id="overview">
-          {activeSection === "Collections" ? <CollectionsPage accessToken={session?.access} /> : activeSection === "Environments" ? <EnvironmentsPage accessToken={session?.access} /> : activeSection === "History" ? <HistoryPage accessToken={session?.access} /> : (
+          {activeSection === "Collections" ? <CollectionsPage accessToken={session?.access} databaseStorageEnabled={databaseStorageEnabled} onToggleDatabaseStorage={toggleDatabaseStorage} /> : activeSection === "Environments" ? <EnvironmentsPage accessToken={session?.access} /> : activeSection === "History" ? <HistoryPage accessToken={session?.access} /> : (
           <>
           <div className="workspace-page-heading">
             <div>
