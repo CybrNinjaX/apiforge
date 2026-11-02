@@ -31,7 +31,7 @@ function KeyValueEditor({ title, rows, onChange }) {
 
 function CollectionsPage({ accessToken, databaseStorageEnabled, onToggleDatabaseStorage }) {
   const [method, setMethod] = useState("GET");
-  const [url, setUrl] = useState("https://jsonplaceholder.typicode.com/todos/1");
+  const [url, setUrl] = useState("");
   const [description, setDescription] = useState("");
   const [queryRows, setQueryRows] = useState([emptyRow()]);
   const [headerRows, setHeaderRows] = useState([emptyRow()]);

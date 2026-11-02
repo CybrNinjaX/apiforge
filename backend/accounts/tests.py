@@ -47,18 +47,51 @@ class RegistrationAPITests(TestCase):
 		self.assertEqual(response.status_code, 400)
 		self.assertIn('email', response.data)
 
-	def test_registered_user_can_obtain_jwt_tokens(self):
-		self.client.post(self.endpoint, self.user_data, format='json')
 
-		response = self.client.post(
-			'/api/auth/token/',
-			{'username': self.user_data['username'], 'password': self.user_data['password']},
-			format='json',
+class LoginAPITests(TestCase):
+	endpoint = '/api/auth/token/'
+
+	def setUp(self):
+		self.client = APIClient()
+		self.user = get_user_model().objects.create_user(
+			username='login_user', email='login@example.com', password='StrongLoginPassword!42'
 		)
+
+	def test_login_returns_jwt_tokens_and_access_token_authenticates_user(self):
+		response = self.client.post(self.endpoint, {
+			'username': self.user.username,
+			'password': 'StrongLoginPassword!42',
+		}, format='json')
 
 		self.assertEqual(response.status_code, 200)
 		self.assertIn('access', response.data)
 		self.assertIn('refresh', response.data)
+
+		profile_response = self.client.get(
+			'/api/accounts/me/',
+			HTTP_AUTHORIZATION=f"Bearer {response.data['access']}",
+		)
+		self.assertEqual(profile_response.status_code, 200)
+		self.assertEqual(profile_response.data['username'], self.user.username)
+
+	def test_login_rejects_incorrect_password(self):
+		response = self.client.post(self.endpoint, {
+			'username': self.user.username,
+			'password': 'IncorrectPassword!42',
+		}, format='json')
+
+		self.assertEqual(response.status_code, 401)
+		self.assertNotIn('access', response.data)
+		self.assertNotIn('refresh', response.data)
+
+	def test_login_rejects_unknown_username(self):
+		response = self.client.post(self.endpoint, {
+			'username': 'unknown_user',
+			'password': 'StrongLoginPassword!42',
+		}, format='json')
+
+		self.assertEqual(response.status_code, 401)
+		self.assertNotIn('access', response.data)
 
 
 class UserProfileAPITests(TestCase):
