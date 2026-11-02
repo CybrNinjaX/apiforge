@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Activity, ArrowUpRight, Braces, Check, Clock3, Database, FolderKanban, LogOut, Play, Save, UserRound } from "lucide-react";
 import { clearSession, getSession, updateSessionProfile } from "../../auth/api/authApi.js";
@@ -63,6 +63,8 @@ function KeyValueEditor({ title, rows, onChange }) {
 }
 
 function CollectionsPage({ accessToken, databaseStorageEnabled, onToggleDatabaseStorage }) {
+  const requestFormRef = useRef(null);
+  const shortcutActionsRef = useRef(null);
   const [method, setMethod] = useState("GET");
   const [url, setUrl] = useState("");
   const [description, setDescription] = useState("");
@@ -97,6 +99,22 @@ function CollectionsPage({ accessToken, databaseStorageEnabled, onToggleDatabase
       .finally(() => setIsLoadingCollections(false));
   }, [accessToken]);
 
+  useEffect(() => {
+    function handleShortcut(event) {
+      if (!(event.ctrlKey || event.metaKey) || event.altKey) return;
+      const key = event.key.toLowerCase();
+      if (key === "enter") {
+        event.preventDefault();
+        shortcutActionsRef.current?.send();
+      } else if (key === "s") {
+        event.preventDefault();
+        shortcutActionsRef.current?.save();
+      }
+    }
+    window.addEventListener("keydown", handleShortcut);
+    return () => window.removeEventListener("keydown", handleShortcut);
+  }, []);
+
   async function sendRequest(event) {
     event.preventDefault();
     setIsSending(true);
@@ -107,6 +125,7 @@ function CollectionsPage({ accessToken, databaseStorageEnabled, onToggleDatabase
       const queryParams = valueFromRows(queryRows);
       const headers = valueFromRows(headerRows);
       const requestUrl = new URL(url.trim());
+      if (!["http:", "https:"].includes(requestUrl.protocol)) throw new Error("Enter an HTTP or HTTPS URL.");
       Object.entries(queryParams).forEach(([key, value]) => {
         if (value !== null && value !== undefined) requestUrl.searchParams.set(key, String(value));
       });
@@ -162,6 +181,14 @@ function CollectionsPage({ accessToken, databaseStorageEnabled, onToggleDatabase
       setSaveMessage("Turn on database storage to save this request.");
       return;
     }
+    let parsedUrl;
+    try {
+      parsedUrl = new URL(url.trim());
+      if (!["http:", "https:"].includes(parsedUrl.protocol)) throw new Error();
+    } catch {
+      setSaveMessage("Enter a valid HTTP or HTTPS URL before saving.");
+      return;
+    }
     setIsSaving(true);
     setSaveMessage("");
     try {
@@ -176,7 +203,7 @@ function CollectionsPage({ accessToken, databaseStorageEnabled, onToggleDatabase
       }
       await saveRequest(accessToken, {
         collection: Number(collectionId),
-        name: `${method} ${new URL(url).pathname || "/"}`,
+        name: `${method} ${parsedUrl.pathname || "/"}`,
         method,
         url: url.trim(),
         description,
@@ -199,6 +226,11 @@ function CollectionsPage({ accessToken, databaseStorageEnabled, onToggleDatabase
     }
   }
 
+  shortcutActionsRef.current = {
+    send: () => requestFormRef.current?.requestSubmit(),
+    save: () => { if (!isSaving) handleSaveRequest(); },
+  };
+
   return (
     <div className="collections-page">
       <div className="collections-heading">
@@ -213,7 +245,7 @@ function CollectionsPage({ accessToken, databaseStorageEnabled, onToggleDatabase
       </div>
 
       <section className="request-composer" aria-label="API request composer">
-        <form onSubmit={sendRequest}>
+        <form ref={requestFormRef} onSubmit={sendRequest}>
           <div className="request-controls">
             <label className="method-select">
               <span className="sr-only">HTTP method</span>
@@ -244,7 +276,7 @@ function CollectionsPage({ accessToken, databaseStorageEnabled, onToggleDatabase
             <button className="save-request-button" type="button" onClick={handleSaveRequest} disabled={isSaving || !url.trim() || !databaseStorageEnabled}><Save size={14} /> {isSaving ? "Saving..." : databaseStorageEnabled ? "Save request" : "Storage is off"}</button>
             {saveMessage && <span className="save-message">{saveMessage}</span>}
           </div>
-          <p className="request-helper">Scripts and settings are saved with the request. Body fields use JSON objects for form-data and URL encoded modes.</p>
+          <p className="request-helper">Ctrl/⌘ + Enter sends · Ctrl/⌘ + S saves. Scripts and settings are saved with each request.</p>
         </form>
       </section>
 

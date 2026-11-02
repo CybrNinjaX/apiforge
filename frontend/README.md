@@ -1,16 +1,66 @@
-# React + Vite
+# ApiForge frontend
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+The ApiForge web client is a React single-page application built with Vite. It provides account pages and a personal API workspace.
 
-Currently, two official plugins are available:
+## Requirements
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+- Node.js compatible with the installed Vite version.
+- npm.
+- The ApiForge Django backend running at `http://127.0.0.1:8000` (the default API base URL).
 
-## React Compiler
+## Setup
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+From this directory:
 
-## Expanding the ESLint configuration
+```bash
+npm install
+npm run dev
+```
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+Vite prints the local URL, normally `http://localhost:5173`.
+
+To use a different backend, copy `.env.example` to `.env` and update:
+
+```dotenv
+VITE_API_BASE_URL=http://127.0.0.1:8000/api
+```
+
+The backend must allow the frontend origin in its CORS settings. Requests to third-party APIs are sent from the browser, so those API servers must also allow the frontend origin through CORS.
+
+## Available commands
+
+```bash
+npm run dev      # Start the Vite development server
+npm run lint     # Run ESLint
+npm run build    # Create a production build in dist/
+npm run preview  # Preview the production build locally
+```
+
+## Main routes
+
+- `/login` — sign in with a username and password.
+- `/register` — create an account.
+- `/forgot-password` — request a password reset link.
+- `/reset-password/:uid/:token` — set a new password from a reset link.
+- `/app` — authenticated workspace with Collections, Environments, and History sections.
+
+## Collections shortcuts
+
+- **Ctrl/⌘ + Enter** sends the current request.
+- **Ctrl/⌘ + S** saves the request when Database storage is enabled.
+
+The database-storage preference is kept in browser local storage. Login session tokens are kept in session storage.
+
+## Source layout
+
+```text
+src/
+├── features/
+│   ├── auth/       # Login, registration, password reset, profile auth calls
+│   └── workspace/  # Request composer, collections, environments, history
+├── shared/
+│   ├── api/        # JSON API client
+│   └── components/ # Shared brand component
+├── App.jsx
+└── main.jsx
+```
