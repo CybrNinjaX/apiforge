@@ -5,6 +5,9 @@ import { clearSession, getSession, updateSessionProfile } from "../../auth/api/a
 import Brand from "../../../shared/components/Brand.jsx";
 import ProfilePanel from "../components/ProfilePanel.jsx";
 import { createCollection, fetchCollections, saveRequest } from "../api/collectionsApi.js";
+import { recordHistory } from "../api/dataApi.js";
+import EnvironmentsPage from "./EnvironmentsPage.jsx";
+import HistoryPage from "./HistoryPage.jsx";
 
 const workspaceSections = [
   { label: "Collections", icon: FolderKanban },
@@ -107,16 +110,27 @@ function CollectionsPage({ accessToken }) {
       }
       const contentType = result.headers.get("content-type") || "";
       const responseBody = contentType.includes("json") ? await result.json() : await result.text();
+      const duration = Math.round(performance.now() - startedAt);
       setResponse({
         ok: result.ok,
         status: result.status,
         statusText: result.statusText,
-        duration: Math.round(performance.now() - startedAt),
+        duration,
         body: responseBody,
         contentType: contentType || "Not provided",
       });
+      const safeHeaders = Object.fromEntries(Object.entries(headers).filter(([key]) => !/(authorization|cookie|token|secret|password|api[-_]?key)/i.test(key)));
+      recordHistory(accessToken, {
+        method, url: requestUrl.toString(), request_headers: safeHeaders,
+        request_body: typeof requestBody === "string" ? requestBody : "",
+        response_status: result.status, response_headers: Object.fromEntries(result.headers.entries()),
+        response_body: typeof responseBody === "string" ? responseBody.slice(0, 50000) : JSON.stringify(responseBody).slice(0, 50000),
+        duration_ms: duration,
+      }).catch(() => {});
     } catch (requestError) {
-      setResponse({ error: requestError.message, duration: Math.round(performance.now() - startedAt) });
+      const duration = Math.round(performance.now() - startedAt);
+      setResponse({ error: requestError.message, duration });
+      recordHistory(accessToken, { method, url, request_headers: {}, request_body: typeof body === "string" ? body : "", response_body: requestError.message, duration_ms: duration }).catch(() => {});
     } finally {
       setIsSending(false);
     }
@@ -288,7 +302,7 @@ export default function WorkspacePage() {
           <div className="topbar-state"><span className="live-dot" /> API session active</div>
         </header>
         <div className="workspace-content" id="overview">
-          {activeSection === "Collections" ? <CollectionsPage accessToken={session?.access} /> : (
+          {activeSection === "Collections" ? <CollectionsPage accessToken={session?.access} /> : activeSection === "Environments" ? <EnvironmentsPage accessToken={session?.access} /> : activeSection === "History" ? <HistoryPage accessToken={session?.access} /> : (
           <>
           <div className="workspace-page-heading">
             <div>
