@@ -21,6 +21,39 @@ const rowsFromValue = (value) => Array.isArray(value)
   ? [...value.map((row) => ({ ...emptyRow(), ...row })), emptyRow()]
   : [...Object.entries(value || {}).map(([key, item]) => ({ ...emptyRow(), key, value: String(item) })), emptyRow()];
 const valueFromRows = (rows) => Object.fromEntries(rows.filter((row) => row.enabled && row.key.trim()).map((row) => [row.key.trim(), row.value]));
+const rawContentTypes = { json: "application/json", javascript: "application/javascript", text: "text/plain", html: "text/html", xml: "application/xml" };
+
+function setHeader(headers, name, value) {
+  const existing = Object.keys(headers).find((key) => key.toLowerCase() === name.toLowerCase());
+  headers[existing || name] = value;
+}
+
+function removeHeader(headers, name) {
+  Object.keys(headers).filter((key) => key.toLowerCase() === name.toLowerCase()).forEach((key) => delete headers[key]);
+}
+
+function buildRequestBody(method, mode, rawBody, language, file, formRows, headers) {
+  if (["GET", "HEAD"].includes(method) || mode === "none") return undefined;
+  if (mode === "binary") return file || undefined;
+  if (mode === "form-data") {
+    const formData = new FormData();
+    formRows.filter((row) => row.enabled && row.key.trim()).forEach((row) => formData.append(row.key.trim(), row.value));
+    // Let fetch set the multipart boundary in Content-Type.
+    removeHeader(headers, "Content-Type");
+    return formData;
+  }
+  if (mode === "x-www-form-urlencoded") {
+    setHeader(headers, "Content-Type", "application/x-www-form-urlencoded;charset=UTF-8");
+    return new URLSearchParams(valueFromRows(formRows));
+  }
+  if (mode === "raw") {
+    if (!Object.keys(headers).some((key) => key.toLowerCase() === "content-type")) {
+      setHeader(headers, "Content-Type", rawContentTypes[language] || "text/plain");
+    }
+    return rawBody;
+  }
+  return undefined;
+}
 
 function KeyValueEditor({ title, rows, onChange }) {
   function updateRow(index, field, value) {
@@ -75,31 +108,15 @@ function CollectionsPage({ accessToken, databaseStorageEnabled, onToggleDatabase
       const headers = valueFromRows(headerRows);
       const requestUrl = new URL(url.trim());
       Object.entries(queryParams).forEach(([key, value]) => {
-        if (value !== null && value !== undefined && String(value) !== "") requestUrl.searchParams.set(key, String(value));
+        if (value !== null && value !== undefined) requestUrl.searchParams.set(key, String(value));
       });
-      if (authType === "bearer" && authConfig.token) headers.Authorization = `Bearer ${authConfig.token}`;
-      if (authType === "basic" && authConfig.username) headers.Authorization = `Basic ${btoa(`${authConfig.username}:${authConfig.password || ""}`)}`;
+      if (authType === "bearer" && authConfig.token) setHeader(headers, "Authorization", `Bearer ${authConfig.token}`);
+      if (authType === "basic" && authConfig.username) setHeader(headers, "Authorization", `Basic ${btoa(`${authConfig.username}:${authConfig.password || ""}`)}`);
       if (authType === "api_key" && authConfig.key) {
         if (authConfig.add_to === "query") requestUrl.searchParams.set(authConfig.key, authConfig.value || "");
-        else headers[authConfig.key] = authConfig.value || "";
+        else setHeader(headers, authConfig.key, authConfig.value || "");
       }
-      let requestBody;
-      if (!["GET", "HEAD"].includes(method) && bodyMode === "binary" && binaryFile) requestBody = binaryFile;
-      if (!["GET", "HEAD"].includes(method) && (bodyMode === "form-data" || bodyMode === "x-www-form-urlencoded")) {
-        if (bodyMode === "form-data" || bodyMode === "x-www-form-urlencoded") {
-          if (bodyMode === "form-data") {
-            requestBody = new FormData();
-            formRows.filter((row) => row.enabled && row.key.trim()).forEach((row) => requestBody.append(row.key.trim(), row.value));
-          } else {
-            requestBody = new URLSearchParams(valueFromRows(formRows));
-            headers["Content-Type"] = "application/x-www-form-urlencoded";
-          }
-        } else {
-          requestBody = body;
-          const contentTypes = { json: "application/json", javascript: "application/javascript", text: "text/plain", html: "text/html", xml: "application/xml" };
-          headers["Content-Type"] ||= contentTypes[rawLanguage];
-        }
-      }
+      const requestBody = buildRequestBody(method, bodyMode, body, rawLanguage, binaryFile, formRows, headers);
       const controller = new AbortController();
       const timeoutId = window.setTimeout(() => controller.abort(), Math.max(1, Number(settings.timeout) || 30) * 1000);
       let result;
@@ -109,7 +126,11 @@ function CollectionsPage({ accessToken, databaseStorageEnabled, onToggleDatabase
         window.clearTimeout(timeoutId);
       }
       const contentType = result.headers.get("content-type") || "";
-      const responseBody = contentType.includes("json") ? await result.json() : await result.text();
+      const responseText = await result.text();
+      let responseBody = responseText;
+      if (responseText && /(?:application|text)\/(?:[\w.+-]*\+)?json\b/i.test(contentType)) {
+        try { responseBody = JSON.parse(responseText); } catch { /* Keep an invalid JSON response visible as text. */ }
+      }
       const duration = Math.round(performance.now() - startedAt);
       setResponse({
         ok: result.ok,
